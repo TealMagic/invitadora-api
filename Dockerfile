@@ -15,6 +15,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod +x entrypoint-api.sh entrypoint-worker.sh
-
-CMD ["./entrypoint-api.sh"]
+CMD ["python", "-m", "scripts.start_api"]
