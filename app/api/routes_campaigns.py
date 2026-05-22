@@ -19,17 +19,17 @@ router = APIRouter(prefix="/v1/campaigns", tags=["campaigns"])
 
 @router.post("", response_model=CampaignResponse, status_code=status.HTTP_201_CREATED)
 def create_campaign(
-    body: CampaignCreateRequest,
+    payload: CampaignCreateRequest,
     db: Session = Depends(get_db),
     _: str = Depends(require_api_key),
 ):
     service = CampaignService(db)
     campaign = service.create_campaign(
-        organizer_name=body.organizer_name,
-        event_at=body.event_at,
-        template_name=body.template_name,
-        template_language=body.template_language,
-        created_by=body.created_by,
+        organizer_name=payload.organizer_name,
+        event_at=payload.event_at,
+        template_name=payload.template_name,
+        template_language=payload.template_language,
+        created_by=payload.created_by,
     )
     return campaign
 
@@ -63,13 +63,13 @@ def get_campaign_stats(
 @router.post("/{campaign_id}/dispatch", response_model=DispatchResponse)
 def dispatch_campaign(
     campaign_id: uuid.UUID,
-    body: DispatchRequest,
+    payload: DispatchRequest,
     db: Session = Depends(get_db),
     _: str = Depends(require_api_key),
 ):
     service = CampaignService(db)
     try:
-        job, _ = service.dispatch(campaign_id, delay_seconds=body.delay_seconds, confirm=body.confirm)
+        job, _ = service.dispatch(campaign_id, delay_seconds=payload.delay_seconds, confirm=payload.confirm)
     except LookupError:
         raise HTTPException(status_code=404, detail="Campaign not found")
     except RuntimeError as e:
