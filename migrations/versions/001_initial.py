@@ -18,23 +18,29 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    campaign_status = sa.Enum(
-        "draft", "queued", "processing", "completed", "completed_with_errors", "failed", "cancelled",
-        name="campaign_status",
-    )
-    recipient_status = sa.Enum(
-        "pending", "processing", "sent", "failed", "invalid", "skipped",
-        name="recipient_status",
-    )
-    job_type = sa.Enum("prepare_campaign", "dispatch_campaign", "retry_failed", name="job_type")
-    job_status = sa.Enum("pending", "processing", "done", "failed", name="job_status")
-    error_stage = sa.Enum("normalize", "qr", "upload", "whatsapp", "internal", name="error_stage")
+    def ensure_enum(name: str, *values: str) -> postgresql.ENUM:
+        enum_type = postgresql.ENUM(*values, name=name, create_type=False)
+        enum_type.create(op.get_bind(), checkfirst=True)
+        return enum_type
 
-    campaign_status.create(op.get_bind(), checkfirst=True)
-    recipient_status.create(op.get_bind(), checkfirst=True)
-    job_type.create(op.get_bind(), checkfirst=True)
-    job_status.create(op.get_bind(), checkfirst=True)
-    error_stage.create(op.get_bind(), checkfirst=True)
+    campaign_status = ensure_enum(
+        "campaign_status",
+        "draft", "queued", "processing", "completed", "completed_with_errors", "failed", "cancelled",
+    )
+    recipient_status = ensure_enum(
+        "recipient_status",
+        "pending", "processing", "sent", "failed", "invalid", "skipped",
+    )
+    job_type = ensure_enum("job_type", "prepare_campaign", "dispatch_campaign", "retry_failed")
+    job_status = ensure_enum("job_status", "pending", "processing", "done", "failed")
+    error_stage = ensure_enum("error_stage", "normalize", "qr", "upload", "whatsapp", "internal")
+
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_tables = set(inspector.get_table_names())
+
+    if "campaigns" in existing_tables:
+        return
 
     op.create_table(
         "campaigns",
