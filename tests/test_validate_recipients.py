@@ -75,12 +75,12 @@ class TestPreviewRecipients:
             RecipientValidateInput(
                 display_name="Pedrito",
                 button_phone="1157017999",
-                entry_code="PEDG3AVU",
+                entry_code="PEDG3A",
             ),
             RecipientValidateInput(
                 display_name="Tomasito",
                 button_phone="1157017999",
-                entry_code="TGM5JBQH",
+                entry_code="TGM5JB",
             ),
         ]
         guests = guests_from_validate_inputs(items)

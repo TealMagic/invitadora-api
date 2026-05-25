@@ -178,7 +178,7 @@ Importa invitados desde JSON. **No envía mensajes.** Modo `replace` (default) o
     {
       "display_name": "Juan Pérez",
       "button_phone": "+5491155551234",
-      "entry_code": "ENT-A3B7K"
+      "entry_code": "A3B7K9"
     }
   ],
   "mode": "replace"
@@ -190,7 +190,7 @@ Importa invitados desde JSON. **No envía mensajes.** Modo `replace` (default) o
 | `recipients` | sí | Lista de invitados (mín. 1) |
 | `recipients[].display_name` | sí | Nombre del invitado |
 | `recipients[].button_phone` | sí | Teléfono; misma normalización AR que CSV |
-| `recipients[].entry_code` | no | Código de entrada/check-in; si falta, se genera al enviar |
+| `recipients[].entry_code` | no | Código de entrada/check-in de **6** caracteres alfanuméricos (A-Z, 0-9); si falta, se genera al enviar |
 | `mode` | no | `"replace"` (default) o `"append"` (acumula sin borrar destinatarios previos) |
 
 **Reglas:**
@@ -223,7 +223,7 @@ Dry-run: misma normalización y agrupación que el import real, **sin persistir 
 ```json
 {
   "recipients": [
-    { "display_name": "Juan Pérez", "button_phone": "+5491155551234", "entry_code": "ENT-A3B7K" }
+    { "display_name": "Juan Pérez", "button_phone": "+5491155551234", "entry_code": "A3B7K9" }
   ],
   "mode": "replace"
 }
@@ -315,7 +315,7 @@ Encola el envío de WhatsApp. Opcionalmente importa destinatarios en la misma re
     {
       "display_name": "Juan Pérez",
       "button_phone": "+5491155551234",
-      "entry_code": "ENTA3B7K"
+      "entry_code": "A3B7K9"
     }
   ],
   "import_mode": "replace"
@@ -417,7 +417,7 @@ Lista paginada de destinatarios.
   "group_key": "541157017999",
   "button_phone": "1157017999",
   "display_name": "Juan, María",
-  "entry_code": "ENT-A3B7K",
+  "entry_code": "A3B7K9",
   "status": "sent",
   "attempt_count": 1,
   "last_error": null,
@@ -506,7 +506,7 @@ curl -s -X POST "$BASE/v1/campaigns/$CAMPAIGN/import-recipients" \
   -H "Content-Type: application/json" \
   -d '{
     "recipients": [
-      {"display_name": "Juan Pérez", "button_phone": "+5491155551234", "entry_code": "ENT-A3B7K"}
+      {"display_name": "Juan Pérez", "button_phone": "+5491155551234", "entry_code": "A3B7K9"}
     ],
     "mode": "replace"
   }'

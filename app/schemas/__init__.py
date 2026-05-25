@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.db.models import CampaignStatus, JobStatus, JobType, RecipientStatus
+from app.domain.entry_codes import ENTRY_CODE_LENGTH, validate_entry_code
 
 
 class CampaignCreateRequest(BaseModel):
@@ -57,7 +58,7 @@ class ImportResultResponse(BaseModel):
 class RecipientInput(BaseModel):
     display_name: str = Field(min_length=1, max_length=500)
     button_phone: str = Field(min_length=1, max_length=32)
-    entry_code: str | None = Field(default=None, max_length=32)
+    entry_code: str | None = Field(default=None, min_length=ENTRY_CODE_LENGTH, max_length=ENTRY_CODE_LENGTH)
 
     @field_validator("display_name", "button_phone", mode="before")
     @classmethod
@@ -74,11 +75,16 @@ class RecipientInput(BaseModel):
             return stripped or None
         return value
 
+    @field_validator("entry_code", mode="after")
+    @classmethod
+    def validate_entry_code_field(cls, value: str | None) -> str | None:
+        return validate_entry_code(value)
+
 
 class RecipientValidateInput(BaseModel):
     display_name: str = Field(default="", max_length=500)
     button_phone: str = Field(default="", max_length=32)
-    entry_code: str | None = Field(default=None, max_length=32)
+    entry_code: str | None = Field(default=None, min_length=ENTRY_CODE_LENGTH, max_length=ENTRY_CODE_LENGTH)
 
     @field_validator("display_name", "button_phone", mode="before")
     @classmethod
@@ -96,6 +102,11 @@ class RecipientValidateInput(BaseModel):
             stripped = value.strip()
             return stripped or None
         return value
+
+    @field_validator("entry_code", mode="after")
+    @classmethod
+    def validate_entry_code_field(cls, value: str | None) -> str | None:
+        return validate_entry_code(value)
 
 
 class ImportRecipientsRequest(BaseModel):
