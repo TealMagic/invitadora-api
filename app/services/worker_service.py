@@ -16,7 +16,9 @@ from app.db.models import (
     JobType,
     MessageAttempt,
     RecipientStatus,
+    WhatsAppDeliveryStatus,
 )
+from app.domain.whatsapp_delivery import reset_whatsapp_delivery_fields
 from app.db.repositories import CampaignRepository, JobRepository, MessageAttemptRepository, RecipientRepository
 from app.domain.entry_codes import generate_entry_code
 from app.domain.payloads import build_payload_confirmacion
@@ -57,6 +59,7 @@ class WorkerService:
             batch = self.recipients.get_failed_retryable(campaign.id, limit=self.settings.worker_batch_size)
             for r in batch:
                 r.status = RecipientStatus.pending
+                reset_whatsapp_delivery_fields(r)
             self.db.commit()
             batch = self.recipients.get_pending(campaign.id, limit=self.settings.worker_batch_size)
         else:
@@ -154,6 +157,7 @@ class WorkerService:
             recipient.status = RecipientStatus.sent
             recipient.whatsapp_message_id = msg_id
             recipient.whatsapp_message_status = msg_status
+            recipient.whatsapp_delivery_status = WhatsAppDeliveryStatus.pending_ack
             recipient.last_error = None
             log_extra(
                 logger,

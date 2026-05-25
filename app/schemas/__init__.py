@@ -4,7 +4,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.db.models import CampaignStatus, JobStatus, JobType, RecipientStatus
+from app.db.models import (
+    CampaignStatus,
+    JobStatus,
+    JobType,
+    RecipientStatus,
+    WhatsAppDeliveryStatus,
+)
 from app.domain.entry_codes import ENTRY_CODE_LENGTH, validate_entry_code
 
 
@@ -45,6 +51,11 @@ class CampaignStatsResponse(BaseModel):
     total_invalid: int
     pending: int = 0
     processing: int = 0
+    whatsapp_sent: int = 0
+    whatsapp_delivered: int = 0
+    whatsapp_read: int = 0
+    whatsapp_failed: int = 0
+    whatsapp_pending_ack: int = 0
 
 
 class ImportResultResponse(BaseModel):
@@ -202,6 +213,14 @@ class RecipientResponse(BaseModel):
     uploaded_qr_url: str | None
     whatsapp_message_id: str | None
     whatsapp_message_status: str | None
+    whatsapp_delivery_status: WhatsAppDeliveryStatus | None = None
+    whatsapp_delivery_status_at: datetime | None = None
+    whatsapp_sent_at: datetime | None = None
+    whatsapp_delivered_at: datetime | None = None
+    whatsapp_read_at: datetime | None = None
+    whatsapp_failed_at: datetime | None = None
+    whatsapp_error_code: int | None = None
+    whatsapp_error_title: str | None = None
 
     model_config = {"from_attributes": True}
 

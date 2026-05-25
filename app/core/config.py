@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     meta_whatsapp_token: str = ""
     meta_phone_number_id: str = "996201250232595"
     meta_graph_version: str = "v20.0"
+    meta_app_secret: str = ""
+    meta_webhook_verify_token: str = ""
 
     default_template_name: str = "confirmacion_registro"
     default_template_language: str = "es_CL"

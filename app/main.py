@@ -7,6 +7,7 @@ from app.api.routes_internal import router as internal_router
 from app.api.routes_jobs import router as jobs_router
 from app.api.routes_recipients import public_router as qrs_router
 from app.api.routes_recipients import router as recipients_router
+from app.api.routes_webhooks import router as webhooks_router
 from app.core.config import get_settings
 from app.core.logging import setup_logging
 
@@ -23,6 +24,7 @@ def create_app() -> FastAPI:
     app.include_router(recipients_router)
     app.include_router(internal_router)
     app.include_router(qrs_router)
+    app.include_router(webhooks_router)
     return app
 
 

@@ -11,6 +11,7 @@ from app.db.models import (
     CampaignStatus,
     JobType,
     RecipientStatus,
+    WhatsAppDeliveryStatus,
 )
 from app.db.repositories import CampaignRepository, ImportRepository, JobRepository
 from app.domain.guests import (
@@ -72,6 +73,7 @@ class CampaignService:
         if not campaign:
             return None
         recipients = campaign.recipients
+        delivery_statuses = [r.whatsapp_delivery_status for r in recipients]
         return {
             "campaign_id": campaign.id,
             "status": campaign.status,
@@ -82,6 +84,34 @@ class CampaignService:
             "total_invalid": campaign.total_invalid,
             "pending": sum(1 for r in recipients if r.status == RecipientStatus.pending),
             "processing": sum(1 for r in recipients if r.status == RecipientStatus.processing),
+            "whatsapp_sent": sum(
+                1
+                for s in delivery_statuses
+                if s
+                in (
+                    WhatsAppDeliveryStatus.sent,
+                    WhatsAppDeliveryStatus.delivered,
+                    WhatsAppDeliveryStatus.read,
+                )
+            ),
+            "whatsapp_delivered": sum(
+                1
+                for s in delivery_statuses
+                if s in (WhatsAppDeliveryStatus.delivered, WhatsAppDeliveryStatus.read)
+            ),
+            "whatsapp_read": sum(1 for s in delivery_statuses if s == WhatsAppDeliveryStatus.read),
+            "whatsapp_failed": sum(
+                1 for s in delivery_statuses if s == WhatsAppDeliveryStatus.failed
+            ),
+            "whatsapp_pending_ack": sum(
+                1
+                for r in recipients
+                if r.status == RecipientStatus.sent
+                and (
+                    r.whatsapp_delivery_status is None
+                    or r.whatsapp_delivery_status == WhatsAppDeliveryStatus.pending_ack
+                )
+            ),
         }
 
     def _ensure_importable(self, campaign: Campaign) -> None:

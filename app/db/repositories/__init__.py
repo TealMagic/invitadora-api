@@ -14,7 +14,9 @@ from app.db.models import (
     JobType,
     MessageAttempt,
     RecipientStatus,
+    WhatsAppDeliveryStatus,
 )
+from app.domain.whatsapp_delivery import apply_status_update
 
 
 class CampaignRepository:
@@ -157,11 +159,56 @@ class RecipientRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def get_by_whatsapp_message_id(self, message_id: str) -> CampaignRecipient | None:
+        return (
+            self.db.execute(
+                select(CampaignRecipient).where(CampaignRecipient.whatsapp_message_id == message_id)
+            )
+            .scalar_one_or_none()
+        )
+
+    def get_by_wa_recipient_id(self, wa_recipient_id: str) -> CampaignRecipient | None:
+        digits = wa_recipient_id.lstrip("+")
+        return (
+            self.db.execute(
+                select(CampaignRecipient)
+                .where(
+                    (CampaignRecipient.to_e164_digits == digits)
+                    | (CampaignRecipient.group_key == digits),
+                )
+                .order_by(CampaignRecipient.updated_at.desc())
+                .limit(1)
+            )
+            .scalar_one_or_none()
+        )
+
+    def apply_whatsapp_status(
+        self,
+        recipient: CampaignRecipient,
+        meta_status: str,
+        timestamp: str | int | None = None,
+        *,
+        error_code: int | None = None,
+        error_title: str | None = None,
+    ) -> bool:
+        changed = apply_status_update(
+            recipient,
+            meta_status,
+            timestamp,
+            error_code=error_code,
+            error_title=error_title,
+        )
+        if changed:
+            self.db.commit()
+            self.db.refresh(recipient)
+        return changed
+
     def list_by_campaign(
         self,
         campaign_id: uuid.UUID,
         *,
         status: RecipientStatus | None = None,
+        whatsapp_delivery_status: WhatsAppDeliveryStatus | None = None,
         search: str | None = None,
         page: int = 1,
         page_size: int = 50,
@@ -169,6 +216,8 @@ class RecipientRepository:
         q = select(CampaignRecipient).where(CampaignRecipient.campaign_id == campaign_id)
         if status:
             q = q.where(CampaignRecipient.status == status)
+        if whatsapp_delivery_status:
+            q = q.where(CampaignRecipient.whatsapp_delivery_status == whatsapp_delivery_status)
         if search:
             like = f"%{search}%"
             q = q.where(

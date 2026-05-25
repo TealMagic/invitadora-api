@@ -158,9 +158,24 @@ Métricas para barra de progreso.
   "total_failed": 0,
   "total_invalid": 0,
   "pending": 1,
-  "processing": 0
+  "processing": 0,
+  "whatsapp_sent": 0,
+  "whatsapp_delivered": 0,
+  "whatsapp_read": 0,
+  "whatsapp_failed": 0,
+  "whatsapp_pending_ack": 0
 }
 ```
+
+Contadores WhatsApp (capa Meta, distintos de `total_sent` pipeline):
+
+| Campo | Definición |
+|-------|------------|
+| `whatsapp_sent` | `whatsapp_delivery_status` en `sent`, `delivered` o `read` |
+| `whatsapp_delivered` | `delivered` o `read` |
+| `whatsapp_read` | `read` |
+| `whatsapp_failed` | `failed` (error post-envío Meta) |
+| `whatsapp_pending_ack` | pipeline `sent` y delivery `null` o `pending_ack` |
 
 ---
 
@@ -404,10 +419,24 @@ Lista paginada de destinatarios.
 
 | Param | Descripción |
 |-------|-------------|
-| `status` | `pending`, `processing`, `sent`, `failed`, `invalid`, `skipped` |
+| `status` | Pipeline: `pending`, `processing`, `sent`, `failed`, `invalid`, `skipped` |
+| `whatsapp_delivery_status` | Meta: `pending_ack`, `sent`, `delivered`, `read`, `failed` |
 | `search` | Busca en nombre, teléfono o group_key |
 | `page` | Default `1` |
 | `page_size` | Default `50`, máx `200` |
+
+**Dos capas de estado:** `status` = cola/worker; `whatsapp_delivery_status` = tildes WhatsApp (webhook Meta).
+
+| `whatsapp_delivery_status` | UI (referencia) |
+|--------------------------|-----------------|
+| `null` | Sin mensaje en WhatsApp / pendiente |
+| `pending_ack` | Worker envió; Meta aún no confirmó `sent` |
+| `sent` | ✓ enviado a Meta |
+| `delivered` | ✓✓ entregado al dispositivo |
+| `read` | ✓✓ leído |
+| `failed` | Error Meta post-envío |
+
+`whatsapp_message_status` (legacy del POST inicial, ej. `accepted`) no equivale a entregado/leído.
 
 **Ejemplo de item:**
 
@@ -423,9 +452,31 @@ Lista paginada de destinatarios.
   "last_error": null,
   "uploaded_qr_url": "https://.../qrs/{campaign_id}/{recipient_id}.jpg",
   "whatsapp_message_id": "wamid....",
-  "whatsapp_message_status": "accepted"
+  "whatsapp_message_status": "accepted",
+  "whatsapp_delivery_status": "delivered",
+  "whatsapp_delivery_status_at": "2026-05-25T18:42:10.123Z",
+  "whatsapp_sent_at": "2026-05-25T18:41:55.000Z",
+  "whatsapp_delivered_at": "2026-05-25T18:42:10.123Z",
+  "whatsapp_read_at": null,
+  "whatsapp_failed_at": null,
+  "whatsapp_error_code": null,
+  "whatsapp_error_title": null
 }
 ```
+
+---
+
+### Webhooks WhatsApp (Meta)
+
+#### `GET /v1/webhooks/whatsapp`
+
+Verificación de suscripción (sin `X-API-Key`). Query: `hub.mode`, `hub.verify_token`, `hub.challenge`. Responde `hub.challenge` si el token coincide con `META_WEBHOOK_VERIFY_TOKEN`.
+
+#### `POST /v1/webhooks/whatsapp`
+
+Recepción de actualizaciones de estado (`statuses[]`). Valida `X-Hub-Signature-256` con `META_APP_SECRET`. Vincula por `whatsapp_message_id` (wamid) o fallback `recipient_id` del webhook.
+
+Variables: `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN` (ver `.env.example`).
 
 ---
 

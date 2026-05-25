@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.security import require_api_key
-from app.db.models import RecipientStatus
+from app.db.models import RecipientStatus, WhatsAppDeliveryStatus
 from app.db.repositories import RecipientRepository
 from app.db.session import get_db
 from app.integrations.storage import get_storage
@@ -19,6 +19,7 @@ public_router = APIRouter(tags=["qrs"])
 def list_recipients(
     campaign_id: uuid.UUID,
     status: RecipientStatus | None = Query(default=None),
+    whatsapp_delivery_status: WhatsAppDeliveryStatus | None = Query(default=None),
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
@@ -27,7 +28,12 @@ def list_recipients(
 ):
     repo = RecipientRepository(db)
     items, total = repo.list_by_campaign(
-        campaign_id, status=status, search=search, page=page, page_size=page_size
+        campaign_id,
+        status=status,
+        whatsapp_delivery_status=whatsapp_delivery_status,
+        search=search,
+        page=page,
+        page_size=page_size,
     )
     return RecipientListResponse(
         items=[RecipientResponse.model_validate(i) for i in items],

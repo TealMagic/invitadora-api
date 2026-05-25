@@ -40,6 +40,14 @@ class RecipientStatus(str, enum.Enum):
     skipped = "skipped"
 
 
+class WhatsAppDeliveryStatus(str, enum.Enum):
+    pending_ack = "pending_ack"
+    sent = "sent"
+    delivered = "delivered"
+    read = "read"
+    failed = "failed"
+
+
 class JobType(str, enum.Enum):
     prepare_campaign = "prepare_campaign"
     dispatch_campaign = "dispatch_campaign"
@@ -128,8 +136,22 @@ class CampaignRecipient(Base):
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    whatsapp_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    whatsapp_message_id: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     whatsapp_message_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    whatsapp_delivery_status: Mapped[WhatsAppDeliveryStatus | None] = mapped_column(
+        Enum(WhatsAppDeliveryStatus, name="whatsapp_delivery_status_enum"), nullable=True
+    )
+    whatsapp_delivery_status_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    whatsapp_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    whatsapp_delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    whatsapp_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    whatsapp_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    whatsapp_error_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    whatsapp_error_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     uploaded_qr_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
