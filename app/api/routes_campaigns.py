@@ -7,14 +7,23 @@ from app.core.security import require_api_key
 from app.db.session import get_db
 from app.schemas import (
     CampaignCreateRequest,
+    CampaignReadinessResponse,
     CampaignResponse,
     CampaignStatsResponse,
+    CampaignUpdateRequest,
     DispatchRequest,
     DispatchResponse,
+    ImportSummary,
 )
 from app.services.campaign_service import CampaignService
 
 router = APIRouter(prefix="/v1/campaigns", tags=["campaigns"])
+
+
+def _dispatch_error_status(detail: str) -> int:
+    if detail.startswith("Too many recipients"):
+        return 413
+    return 422
 
 
 @router.post("", response_model=CampaignResponse, status_code=status.HTTP_201_CREATED)
@@ -47,6 +56,27 @@ def get_campaign(
     return campaign
 
 
+@router.patch("/{campaign_id}", response_model=CampaignResponse)
+def update_campaign(
+    campaign_id: uuid.UUID,
+    payload: CampaignUpdateRequest,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_api_key),
+):
+    service = CampaignService(db)
+    try:
+        campaign = service.update_campaign(
+            campaign_id,
+            organizer_name=payload.organizer_name,
+            event_at=payload.event_at,
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return campaign
+
+
 @router.get("/{campaign_id}/stats", response_model=CampaignStatsResponse)
 def get_campaign_stats(
     campaign_id: uuid.UUID,
@@ -60,6 +90,19 @@ def get_campaign_stats(
     return stats
 
 
+@router.get("/{campaign_id}/readiness", response_model=CampaignReadinessResponse)
+def get_campaign_readiness(
+    campaign_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_api_key),
+):
+    service = CampaignService(db)
+    readiness = service.get_readiness(campaign_id)
+    if not readiness:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return readiness
+
+
 @router.post("/{campaign_id}/dispatch", response_model=DispatchResponse)
 def dispatch_campaign(
     campaign_id: uuid.UUID,
@@ -69,14 +112,27 @@ def dispatch_campaign(
 ):
     service = CampaignService(db)
     try:
-        job, _ = service.dispatch(campaign_id, delay_seconds=payload.delay_seconds, confirm=payload.confirm)
+        job, _, import_summary = service.dispatch(
+            campaign_id,
+            delay_seconds=payload.delay_seconds,
+            confirm=payload.confirm,
+            recipients=payload.recipients,
+            import_mode=payload.import_mode,
+        )
     except LookupError:
         raise HTTPException(status_code=404, detail="Campaign not found")
     except RuntimeError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return DispatchResponse(job_id=job.id, status=job.status)
+        detail = str(e)
+        code = 400 if detail == "confirm must be true" or detail == "No recipients to dispatch" else _dispatch_error_status(detail)
+        raise HTTPException(status_code=code, detail=detail)
+
+    import_block = None
+    if import_summary:
+        import_block = ImportSummary(**import_summary)
+
+    return DispatchResponse(job_id=job.id, status=job.status, import_=import_block)
 
 
 @router.post("/{campaign_id}/retry-failed", response_model=DispatchResponse)

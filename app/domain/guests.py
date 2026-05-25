@@ -72,6 +72,39 @@ def guests_from_recipient_inputs(items: "list[RecipientInput]") -> List[GuestRow
     return rows
 
 
+def guests_from_validate_inputs(items: "list") -> List[GuestRow]:
+    rows: List[GuestRow] = []
+    for i, item in enumerate(items):
+        name = (item.display_name or "").strip() if hasattr(item, "display_name") else ""
+        phone = (item.button_phone or "").strip() if hasattr(item, "button_phone") else ""
+        entry_code = getattr(item, "entry_code", None)
+        if isinstance(entry_code, str):
+            entry_code = entry_code.strip() or None
+        rows.append(
+            GuestRow(
+                line_no=i + 1,
+                name=name,
+                raw_phone=phone,
+                entry_code=entry_code,
+            )
+        )
+    return rows
+
+
+def normalization_error_to_reason(err: str | None) -> str:
+    if err == "Vacío":
+        return "missing_phone"
+    return "invalid_phone"
+
+
+def invalid_sample_from_guest(guest: GuestRow, reason: str) -> dict:
+    return {
+        "display_name": guest.name,
+        "button_phone": guest.raw_phone,
+        "reason": reason,
+    }
+
+
 def read_guests_from_bytes(
     content: bytes,
     delimiter: Optional[str] = None,

@@ -2,7 +2,7 @@ import uuid
 from collections import defaultdict
 
 from app.db.models import CampaignImportRow, CampaignRecipient, RecipientStatus
-from app.domain.guests import GuestRow, PreparedRecipient, prepare_recipients
+from app.domain.guests import EntryCodeConflictError, GuestRow, PreparedRecipient, prepare_recipients
 from app.domain.phones import normalize_ar_phone
 
 
@@ -38,6 +38,36 @@ def build_import_entities(
 
     db_recipients = [_recipient_from_prepared(campaign_id, r) for r in recipients]
     return import_rows, db_recipients
+
+
+def merge_prepared_into_recipients(
+    existing: list[CampaignRecipient],
+    new_prepared: list[PreparedRecipient],
+    campaign_id: uuid.UUID,
+) -> list[CampaignRecipient]:
+    by_key = {r.group_key: r for r in existing}
+    for prep in new_prepared:
+        rec = by_key.get(prep.group_key)
+        if rec is None:
+            by_key[prep.group_key] = _recipient_from_prepared(campaign_id, prep)
+            continue
+        for name in prep.names:
+            if name and name not in (rec.names_json or []):
+                rec.names_json = list(rec.names_json or []) + [name]
+        for line in prep.source_lines:
+            if line not in (rec.source_lines_json or []):
+                rec.source_lines_json = list(rec.source_lines_json or []) + [line]
+        if prep.entry_code:
+            if rec.entry_code and rec.entry_code != prep.entry_code:
+                raise ValueError(
+                    f"Conflicting entry_code values for phone group {prep.group_key}: "
+                    f"{sorted({rec.entry_code, prep.entry_code})}"
+                )
+            if not rec.entry_code:
+                rec.entry_code = prep.entry_code
+        names = [n for n in (rec.names_json or []) if n]
+        rec.display_name = ", ".join(names) if names else "Hola"
+    return list(by_key.values())
 
 
 def _recipient_from_prepared(campaign_id: uuid.UUID, rec: PreparedRecipient) -> CampaignRecipient:

@@ -1,2 +1,2 @@
-web: uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
-worker: python -m worker.run_worker
+web: python -m scripts.start_api
+worker: python -m scripts.start_worker

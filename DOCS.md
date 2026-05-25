@@ -25,12 +25,15 @@ Excepciones públicas (sin API key):
 ## Flujo típico
 
 ```text
-1. POST /v1/campaigns              → crear campaña
-2. POST /v1/campaigns/{id}/import-recipients → cargar invitados (JSON)
-3. POST /v1/campaigns/{id}/dispatch    → encolar envío
-4. GET  /v1/campaigns/{id}/stats      → polling de progreso
-5. GET  /v1/campaigns/{id}/recipients  → detalle por destinatario
+1. POST /v1/campaigns                         → crear campaña
+2. POST /v1/campaigns/{id}/validate-recipients → (opcional) dry-run para el modal de confirmación
+3. POST /v1/campaigns/{id}/dispatch           → import + encolar envío en un paso (o import-recipients + dispatch por separado)
+4. GET  /v1/campaigns/{id}/readiness          → habilitar botón "Enviar"
+5. GET  /v1/campaigns/{id}/stats              → polling de progreso
+6. GET  /v1/campaigns/{id}/recipients         → detalle por destinatario
 ```
+
+`PATCH /v1/campaigns/{id}` permite corregir `organizer_name` / `event_at` en `draft` sin recrear la campaña.
 
 > **Deprecated:** `POST /v1/campaigns/{id}/import-file` (CSV) sigue disponible por compatibilidad pero se recomienda usar `import-recipients`.
 
@@ -97,6 +100,50 @@ Detalle de la campaña.
 
 ---
 
+#### `PATCH /v1/campaigns/{campaign_id}`
+
+Actualiza metadatos de la campaña. Solo en estado `draft`.
+
+**Body (JSON):** al menos un campo.
+
+```json
+{
+  "organizer_name": "Tomás",
+  "event_at": "2026-12-12T21:00:00-03:00"
+}
+```
+
+**Respuesta `200`:** mismo shape que `GET` campaña.
+
+Errores: `409` si no está en `draft`.
+
+---
+
+#### `GET /v1/campaigns/{campaign_id}/readiness`
+
+Indica si el botón "Enviar" debería estar habilitado según el estado persistido en la API.
+
+```json
+{
+  "campaign_id": "uuid",
+  "status": "draft",
+  "total_unique_recipients": 115,
+  "ready_to_dispatch": true,
+  "blocking_reasons": []
+}
+```
+
+Códigos posibles en `blocking_reasons`:
+
+| Código | Significado |
+|--------|-------------|
+| `not_draft` | La campaña ya no está en borrador |
+| `campaign_processing` | Envío en curso |
+| `campaign_queued` | Job de envío ya encolado |
+| `no_recipients` | Sin destinatarios importados |
+
+---
+
 #### `GET /v1/campaigns/{campaign_id}/stats`
 
 Métricas para barra de progreso.
@@ -119,7 +166,7 @@ Métricas para barra de progreso.
 
 #### `POST /v1/campaigns/{campaign_id}/import-recipients`
 
-Importa invitados desde JSON. **No envía mensajes.** Reemplaza el draft anterior (`mode: replace`).
+Importa invitados desde JSON. **No envía mensajes.** Modo `replace` (default) o `append` para lotes >500 filas.
 
 **Content-Type:** `application/json`
 
@@ -144,7 +191,7 @@ Importa invitados desde JSON. **No envía mensajes.** Reemplaza el draft anterio
 | `recipients[].display_name` | sí | Nombre del invitado |
 | `recipients[].button_phone` | sí | Teléfono; misma normalización AR que CSV |
 | `recipients[].entry_code` | no | Código de entrada/check-in; si falta, se genera al enviar |
-| `mode` | no | Solo `"replace"` (default) |
+| `mode` | no | `"replace"` (default) o `"append"` (acumula sin borrar destinatarios previos) |
 
 **Reglas:**
 
@@ -164,6 +211,48 @@ Importa invitados desde JSON. **No envía mensajes.** Reemplaza el draft anterio
   "status": "draft"
 }
 ```
+
+---
+
+#### `POST /v1/campaigns/{campaign_id}/validate-recipients`
+
+Dry-run: misma normalización y agrupación que el import real, **sin persistir ni encolar jobs**.
+
+**Body:**
+
+```json
+{
+  "recipients": [
+    { "display_name": "Juan Pérez", "button_phone": "+5491155551234", "entry_code": "ENT-A3B7K" }
+  ],
+  "mode": "replace"
+}
+```
+
+Acepta filas con teléfono vacío (a diferencia de `import-recipients`) para reportar `missing_phone` en muestras.
+
+**Respuesta `200`:**
+
+```json
+{
+  "total_rows": 120,
+  "total_unique_recipients": 115,
+  "total_invalid": 5,
+  "invalid_samples": [
+    { "display_name": "Ana", "button_phone": "", "reason": "missing_phone" }
+  ],
+  "would_exceed_campaign_limit": false,
+  "can_import": true,
+  "can_dispatch": true
+}
+```
+
+| Campo | Descripción |
+|-------|-------------|
+| `can_import` | `false` si no es `draft`, excede 2000 o hay conflicto de `entry_code` |
+| `can_dispatch` | `false` si no se puede importar, no hay destinatarios válidos, o la campaña está `processing` / `queued` |
+
+Códigos `reason` en muestras: `missing_phone`, `invalid_phone`.
 
 ---
 
@@ -214,14 +303,22 @@ Los teléfonos argentinos se normalizan y agrupan (mismo número en distintos fo
 
 #### `POST /v1/campaigns/{campaign_id}/dispatch`
 
-Encola el envío de WhatsApp.
+Encola el envío de WhatsApp. Opcionalmente importa destinatarios en la misma request (elimina el paso de “sincronizar” en el cliente).
 
 **Body (JSON):**
 
 ```json
 {
+  "confirm": true,
   "delay_seconds": 2,
-  "confirm": true
+  "recipients": [
+    {
+      "display_name": "Juan Pérez",
+      "button_phone": "+5491155551234",
+      "entry_code": "ENTA3B7K"
+    }
+  ],
+  "import_mode": "replace"
 }
 ```
 
@@ -229,17 +326,33 @@ Encola el envío de WhatsApp.
 |-------|-------------|
 | `delay_seconds` | Pausa entre mensajes (≥ 0) |
 | `confirm` | Debe ser `true` para ejecutar |
+| `recipients` | Opcional. Si viene, importa primero (mismo pipeline que `import-recipients`) y luego encola |
+| `import_mode` | `replace` (default) o `append` cuando hay `recipients` |
 
 **Respuesta `200`:**
 
 ```json
 {
   "job_id": "uuid",
-  "status": "pending"
+  "status": "pending",
+  "import": {
+    "total_rows": 120,
+    "total_unique_recipients": 115,
+    "total_invalid": 5
+  }
 }
 ```
 
-Errores comunes: `409` si la campaña ya está `processing`, `400` si no hay destinatarios o `confirm` es false.
+El bloque `import` solo aparece si se envió `recipients`.
+
+**Reglas:**
+
+- Con `recipients`: solo si la campaña está en `draft`; validación fallida → `422` (no se encola dispatch).
+- Límites 500/request y 2000/campaña antes de encolar.
+- `409` si ya está `processing` o `queued` (no dos dispatches en vuelo).
+- Sin `recipients`: comportamiento anterior (dispatch sobre lista ya importada).
+
+Errores: `400` si `confirm` es false o no hay destinatarios; `413` si excede límites de cantidad.
 
 ---
 

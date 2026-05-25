@@ -6,10 +6,10 @@
   },
   "services": {
     "api": {
-      "startCommand": "./entrypoint-api.sh"
+      "startCommand": "python -m scripts.start_api"
     },
     "worker": {
-      "startCommand": "./entrypoint-worker.sh"
+      "startCommand": "python -m scripts.start_worker"
     }
   }
 }

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.db.models import CampaignStatus, JobStatus, JobType, RecipientStatus
 
@@ -75,19 +75,93 @@ class RecipientInput(BaseModel):
         return value
 
 
+class RecipientValidateInput(BaseModel):
+    display_name: str = Field(default="", max_length=500)
+    button_phone: str = Field(default="", max_length=32)
+    entry_code: str | None = Field(default=None, max_length=32)
+
+    @field_validator("display_name", "button_phone", mode="before")
+    @classmethod
+    def strip_fields(cls, value: str | None) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        return str(value)
+
+    @field_validator("entry_code", mode="before")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+
 class ImportRecipientsRequest(BaseModel):
     recipients: list[RecipientInput] = Field(min_length=1)
-    mode: Literal["replace"] = "replace"
+    mode: Literal["replace", "append"] = "replace"
+
+
+class ValidateRecipientsRequest(BaseModel):
+    recipients: list[RecipientValidateInput] = Field(min_length=1)
+    mode: Literal["replace", "append"] = "replace"
+
+
+class InvalidRecipientSample(BaseModel):
+    display_name: str
+    button_phone: str
+    reason: str
+
+
+class ValidateRecipientsResponse(BaseModel):
+    total_rows: int
+    total_unique_recipients: int
+    total_invalid: int
+    invalid_samples: list[InvalidRecipientSample]
+    would_exceed_campaign_limit: bool
+    can_import: bool
+    can_dispatch: bool
+
+
+class ImportSummary(BaseModel):
+    total_rows: int
+    total_unique_recipients: int
+    total_invalid: int
 
 
 class DispatchRequest(BaseModel):
     delay_seconds: float = Field(default=2.0, ge=0)
     confirm: bool = False
+    recipients: list[RecipientInput] | None = None
+    import_mode: Literal["replace", "append"] = "replace"
 
 
 class DispatchResponse(BaseModel):
     job_id: UUID
     status: JobStatus
+    import_: ImportSummary | None = Field(default=None, alias="import")
+
+    model_config = {"populate_by_name": True}
+
+
+class CampaignUpdateRequest(BaseModel):
+    organizer_name: str | None = Field(default=None, min_length=1, max_length=255)
+    event_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> "CampaignUpdateRequest":
+        if self.organizer_name is None and self.event_at is None:
+            raise ValueError("At least one field must be provided")
+        return self
+
+
+class CampaignReadinessResponse(BaseModel):
+    campaign_id: UUID
+    status: CampaignStatus
+    total_unique_recipients: int
+    ready_to_dispatch: bool
+    blocking_reasons: list[str]
 
 
 class JobResponse(BaseModel):

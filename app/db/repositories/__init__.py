@@ -52,6 +52,21 @@ class CampaignRepository:
         self.db.refresh(campaign)
         return campaign
 
+    def update_fields(
+        self,
+        campaign: Campaign,
+        *,
+        organizer_name: str | None = None,
+        event_at: datetime | None = None,
+    ) -> Campaign:
+        if organizer_name is not None:
+            campaign.organizer_name = organizer_name
+        if event_at is not None:
+            campaign.event_at = event_at
+        self.db.commit()
+        self.db.refresh(campaign)
+        return campaign
+
     def refresh_counters(self, campaign: Campaign) -> Campaign:
         recipients = (
             self.db.execute(
@@ -73,6 +88,25 @@ class ImportRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def list_recipients(self, campaign_id: uuid.UUID) -> list[CampaignRecipient]:
+        return (
+            self.db.execute(
+                select(CampaignRecipient).where(CampaignRecipient.campaign_id == campaign_id)
+            )
+            .scalars()
+            .all()
+        )
+
+    def max_import_line_no(self, campaign_id: uuid.UUID) -> int:
+        rows = (
+            self.db.execute(
+                select(CampaignImportRow.line_no).where(CampaignImportRow.campaign_id == campaign_id)
+            )
+            .scalars()
+            .all()
+        )
+        return max(rows, default=0)
+
     def replace_import_data(
         self,
         campaign: Campaign,
@@ -92,6 +126,30 @@ class ImportRepository:
         campaign.total_rows = total_rows
         campaign.total_unique_recipients = len(recipients)
         campaign.total_invalid = sum(1 for r in import_rows if r.normalization_error)
+        self.db.commit()
+
+    def append_import_data(
+        self,
+        campaign: Campaign,
+        new_import_rows: list[CampaignImportRow],
+        merged_recipients: list[CampaignRecipient],
+        *,
+        additional_rows: int,
+    ) -> None:
+        self.db.add_all(new_import_rows)
+        for rec in merged_recipients:
+            if rec.id is None:
+                self.db.add(rec)
+        campaign.total_rows += additional_rows
+        campaign.total_unique_recipients = len(merged_recipients)
+        all_rows = (
+            self.db.execute(
+                select(CampaignImportRow).where(CampaignImportRow.campaign_id == campaign.id)
+            )
+            .scalars()
+            .all()
+        )
+        campaign.total_invalid = sum(1 for r in all_rows if r.normalization_error)
         self.db.commit()
 
 

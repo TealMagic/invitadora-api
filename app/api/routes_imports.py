@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.security import require_api_key
 from app.db.session import get_db
 from app.domain.guests import guests_from_recipient_inputs
-from app.schemas import ImportRecipientsRequest, ImportResultResponse
+from app.schemas import (
+    ImportRecipientsRequest,
+    ImportResultResponse,
+    InvalidRecipientSample,
+    ValidateRecipientsRequest,
+    ValidateRecipientsResponse,
+)
 from app.services.campaign_service import CampaignService
 
 router = APIRouter(prefix="/v1/campaigns", tags=["imports"])
@@ -31,7 +37,9 @@ def _handle_import_errors(fn):
         raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         detail = str(e)
-        status_code = 413 if detail.startswith("Too many recipients") else 422
+        status_code = 413 if detail.startswith("Too many recipients") or detail.startswith(
+            "Campaign recipient limit"
+        ) else 422
         raise HTTPException(status_code=status_code, detail=detail)
 
 
@@ -50,10 +58,46 @@ def import_recipients(
     guests = guests_from_recipient_inputs(payload.recipients)
 
     def _run():
-        return service.import_guests(campaign_id, guests, source="json")
+        return service.import_guests(campaign_id, guests, source="json", mode=payload.mode)
 
     campaign = _handle_import_errors(_run)
     return _import_result(campaign)
+
+
+@router.post(
+    "/{campaign_id}/validate-recipients",
+    response_model=ValidateRecipientsResponse,
+    summary="Dry-run validation of recipients without persisting",
+)
+def validate_recipients(
+    campaign_id: uuid.UUID,
+    payload: ValidateRecipientsRequest,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_api_key),
+):
+    service = CampaignService(db)
+    try:
+        preview = service.preview_from_validate_inputs(
+            campaign_id,
+            payload.recipients,
+            mode=payload.mode,
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    except ValueError as e:
+        detail = str(e)
+        status_code = 413 if detail.startswith("Too many recipients") else 422
+        raise HTTPException(status_code=status_code, detail=detail)
+
+    return ValidateRecipientsResponse(
+        total_rows=preview.total_rows,
+        total_unique_recipients=preview.total_unique_recipients,
+        total_invalid=preview.total_invalid,
+        invalid_samples=[InvalidRecipientSample(**s) for s in preview.invalid_samples],
+        would_exceed_campaign_limit=preview.would_exceed_campaign_limit,
+        can_import=preview.can_import,
+        can_dispatch=preview.can_dispatch,
+    )
 
 
 @router.post(
