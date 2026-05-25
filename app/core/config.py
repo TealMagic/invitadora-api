@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     worker_poll_seconds: int = 5
     worker_batch_size: int = 20
 
+    max_recipients_per_request: int = 500
+    max_recipients_per_campaign: int = 2000
+
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_database_url(cls, value: str) -> str:

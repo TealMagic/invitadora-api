@@ -1,18 +1,67 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.security import require_api_key
-from app.db.models import CampaignStatus
 from app.db.session import get_db
-from app.schemas import ImportResultResponse
+from app.domain.guests import guests_from_recipient_inputs
+from app.schemas import ImportRecipientsRequest, ImportResultResponse
 from app.services.campaign_service import CampaignService
 
 router = APIRouter(prefix="/v1/campaigns", tags=["imports"])
 
 
-@router.post("/{campaign_id}/import-file", response_model=ImportResultResponse)
+def _import_result(campaign) -> ImportResultResponse:
+    return ImportResultResponse(
+        campaign_id=campaign.id,
+        total_rows=campaign.total_rows,
+        total_unique_recipients=campaign.total_unique_recipients,
+        total_invalid=campaign.total_invalid,
+        status=campaign.status,
+    )
+
+
+def _handle_import_errors(fn):
+    try:
+        return fn()
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError as e:
+        detail = str(e)
+        status_code = 413 if detail.startswith("Too many recipients") else 422
+        raise HTTPException(status_code=status_code, detail=detail)
+
+
+@router.post(
+    "/{campaign_id}/import-recipients",
+    response_model=ImportResultResponse,
+    summary="Import recipients from JSON",
+)
+def import_recipients(
+    campaign_id: uuid.UUID,
+    payload: ImportRecipientsRequest,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_api_key),
+):
+    service = CampaignService(db)
+    guests = guests_from_recipient_inputs(payload.recipients)
+
+    def _run():
+        return service.import_guests(campaign_id, guests, source="json")
+
+    campaign = _handle_import_errors(_run)
+    return _import_result(campaign)
+
+
+@router.post(
+    "/{campaign_id}/import-file",
+    response_model=ImportResultResponse,
+    deprecated=True,
+    summary="Import recipients from CSV (deprecated)",
+)
 async def import_file(
     campaign_id: uuid.UUID,
     file: UploadFile = File(...),
@@ -23,8 +72,9 @@ async def import_file(
 ):
     content = await file.read()
     service = CampaignService(db)
-    try:
-        campaign = service.import_file(
+
+    def _run():
+        return service.import_file(
             campaign_id,
             content,
             filename=file.filename,
@@ -32,17 +82,6 @@ async def import_file(
             delimiter=delimiter,
             has_header=has_header,
         )
-    except LookupError:
-        raise HTTPException(status_code=404, detail="Campaign not found")
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
 
-    return ImportResultResponse(
-        campaign_id=campaign.id,
-        total_rows=campaign.total_rows,
-        total_unique_recipients=campaign.total_unique_recipients,
-        total_invalid=campaign.total_invalid,
-        status=campaign.status,
-    )
+    campaign = _handle_import_errors(_run)
+    return _import_result(campaign)

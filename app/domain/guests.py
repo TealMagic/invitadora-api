@@ -1,11 +1,12 @@
 import csv
-import hashlib
 import io
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 from app.domain.phones import normalize_ar_phone
 
+if TYPE_CHECKING:
+    from app.schemas import RecipientInput
 
 NAME_COLUMNS = {"nombre completo", "nombre", "invitado", "full name", "name"}
 PHONE_COLUMNS = {"celular", "telefono", "teléfono", "phone", "mobile"}
@@ -17,11 +18,21 @@ class ImportColumnError(Exception):
         super().__init__(f"No se encontraron columnas requeridas. Fieldnames={fieldnames}")
 
 
+class EntryCodeConflictError(Exception):
+    def __init__(self, group_key: str, codes: set[str]) -> None:
+        self.group_key = group_key
+        self.codes = codes
+        super().__init__(
+            f"Conflicting entry_code values for phone group {group_key}: {sorted(codes)}"
+        )
+
+
 @dataclass
 class GuestRow:
     line_no: int
     name: str
     raw_phone: str
+    entry_code: str | None = None
 
 
 @dataclass
@@ -31,6 +42,7 @@ class PreparedRecipient:
     button_phone: str
     names: List[str]
     source_lines: List[int]
+    entry_code: str | None = None
 
 
 def _detect_delimiter(sample: str) -> str:
@@ -41,6 +53,23 @@ def _detect_delimiter(sample: str) -> str:
         if "\t" in sample:
             return "\t"
         return ","
+
+
+def guests_from_recipient_inputs(items: "list[RecipientInput]") -> List[GuestRow]:
+    rows: List[GuestRow] = []
+    for i, item in enumerate(items):
+        name = item.display_name.strip()
+        phone = item.button_phone.strip()
+        if name or phone:
+            rows.append(
+                GuestRow(
+                    line_no=i + 1,
+                    name=name,
+                    raw_phone=phone,
+                    entry_code=item.entry_code,
+                )
+            )
+    return rows
 
 
 def read_guests_from_bytes(
@@ -86,6 +115,17 @@ def read_guests_from_bytes(
     return rows
 
 
+def _merge_entry_code(rec: PreparedRecipient, guest: GuestRow, group_key: str) -> None:
+    code = guest.entry_code
+    if not code:
+        return
+    if rec.entry_code is None:
+        rec.entry_code = code
+        return
+    if rec.entry_code != code:
+        raise EntryCodeConflictError(group_key, {rec.entry_code, code})
+
+
 def prepare_recipients(guests: List[GuestRow]) -> tuple[List[PreparedRecipient], List[tuple[GuestRow, str]]]:
     grouped: Dict[str, PreparedRecipient] = {}
     invalid: List[tuple[GuestRow, str]] = []
@@ -104,11 +144,13 @@ def prepare_recipients(guests: List[GuestRow]) -> tuple[List[PreparedRecipient],
                 button_phone=btn,
                 names=[g.name] if g.name else [],
                 source_lines=[g.line_no],
+                entry_code=g.entry_code,
             )
         else:
             if g.name:
                 rec.names.append(g.name)
             rec.source_lines.append(g.line_no)
+            _merge_entry_code(rec, g, group_key)
 
     recipients = sorted(grouped.values(), key=lambda r: r.group_key)
     return recipients, invalid

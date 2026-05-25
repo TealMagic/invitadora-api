@@ -5,8 +5,16 @@ import pytest
 from PIL import Image
 
 from app.domain.entry_codes import generate_entry_code
-from app.domain.guests import GuestRow, read_guests_from_bytes, prepare_recipients
+from app.domain.guests import (
+    EntryCodeConflictError,
+    GuestRow,
+    guests_from_recipient_inputs,
+    prepare_recipients,
+    read_guests_from_bytes,
+)
 from app.domain.phones import normalize_ar_phone
+from app.schemas import RecipientInput
+from app.services.import_service import build_import_entities
 from app.domain.qrcode_service import generate_qr_image
 
 
@@ -44,6 +52,50 @@ class TestPrepareRecipients:
         assert len(invalid) == 0
         assert len(recipients) == 1
         assert len(recipients[0].names) == 2
+
+    def test_preserves_entry_code_when_grouped(self):
+        guests = [
+            GuestRow(1, "Juan", "+5491157017999", entry_code="ENT-A3B7K"),
+            GuestRow(2, "María", "+5491157017999", entry_code="ENT-A3B7K"),
+        ]
+        recipients, invalid = prepare_recipients(guests)
+        assert len(invalid) == 0
+        assert len(recipients) == 1
+        assert recipients[0].entry_code == "ENT-A3B7K"
+
+    def test_entry_code_conflict_raises(self):
+        guests = [
+            GuestRow(1, "Juan", "+5491157017999", entry_code="ENT-AAAAA"),
+            GuestRow(2, "María", "+5491157017999", entry_code="ENT-BBBBB"),
+        ]
+        with pytest.raises(EntryCodeConflictError):
+            prepare_recipients(guests)
+
+
+class TestGuestsFromRecipientInputs:
+    def test_maps_json_to_guest_rows(self):
+        items = [
+            RecipientInput(display_name="Juan Pérez", button_phone="+5491155551234", entry_code="ENT-A3B7K"),
+        ]
+        rows = guests_from_recipient_inputs(items)
+        assert len(rows) == 1
+        assert rows[0].line_no == 1
+        assert rows[0].name == "Juan Pérez"
+        assert rows[0].raw_phone == "+5491155551234"
+        assert rows[0].entry_code == "ENT-A3B7K"
+
+
+class TestBuildImportEntities:
+    def test_persists_entry_code_on_recipient(self):
+        import uuid
+
+        guests = [
+            GuestRow(1, "Juan", "+5491157017999", entry_code="ENT-A3B7K"),
+        ]
+        _, recipients = build_import_entities(uuid.uuid4(), guests)
+        assert len(recipients) == 1
+        assert recipients[0].entry_code == "ENT-A3B7K"
+        assert recipients[0].display_name == "Juan"
 
 
 class TestEntryCode:

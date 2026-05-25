@@ -51,5 +51,6 @@ def _recipient_from_prepared(campaign_id: uuid.UUID, rec: PreparedRecipient) -> 
         display_name=display,
         names_json=names,
         source_lines_json=rec.source_lines,
+        entry_code=rec.entry_code,
         status=RecipientStatus.pending,
     )

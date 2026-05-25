@@ -100,7 +100,8 @@ class WorkerService:
         self.db.commit()
 
         first_name = recipient.names_json[0] if recipient.names_json else ""
-        recipient.entry_code = generate_entry_code(recipient.button_phone, first_name)
+        if not recipient.entry_code:
+            recipient.entry_code = generate_entry_code(recipient.button_phone, first_name)
         invitado_text = recipient.display_name
         fecha_hora_str = campaign.event_at.strftime("%d/%m/%Y %H:%M")
 

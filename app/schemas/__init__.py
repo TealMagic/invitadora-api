@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.db.models import CampaignStatus, JobStatus, JobType, RecipientStatus
 
@@ -51,6 +52,32 @@ class ImportResultResponse(BaseModel):
     total_unique_recipients: int
     total_invalid: int
     status: CampaignStatus
+
+
+class RecipientInput(BaseModel):
+    display_name: str = Field(min_length=1, max_length=500)
+    button_phone: str = Field(min_length=1, max_length=32)
+    entry_code: str | None = Field(default=None, max_length=32)
+
+    @field_validator("display_name", "button_phone", mode="before")
+    @classmethod
+    def strip_required(cls, value: str) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("entry_code", mode="before")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+
+class ImportRecipientsRequest(BaseModel):
+    recipients: list[RecipientInput] = Field(min_length=1)
+    mode: Literal["replace"] = "replace"
 
 
 class DispatchRequest(BaseModel):

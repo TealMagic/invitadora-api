@@ -1,25 +1,25 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.models import (
     Campaign,
-    CampaignImportRow,
-    CampaignRecipient,
     CampaignStatus,
     JobType,
     RecipientStatus,
 )
 from app.db.repositories import CampaignRepository, ImportRepository, JobRepository
-from app.domain.guests import ImportColumnError, read_guests_from_bytes
-from app.domain.phones import normalize_ar_phone
+from app.domain.guests import EntryCodeConflictError, GuestRow, ImportColumnError, read_guests_from_bytes
 from app.services.import_service import build_import_entities
 
 
 class CampaignService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self.settings = get_settings()
         self.campaigns = CampaignRepository(db)
         self.imports = ImportRepository(db)
         self.jobs = JobRepository(db)
@@ -61,6 +61,57 @@ class CampaignService:
             "processing": sum(1 for r in recipients if r.status == RecipientStatus.processing),
         }
 
+    def _ensure_importable(self, campaign: Campaign) -> None:
+        if campaign.status != CampaignStatus.draft:
+            raise RuntimeError(f"Campaign not importable in status {campaign.status.value}")
+
+    def import_guests(
+        self,
+        campaign_id: uuid.UUID,
+        guests: list[GuestRow],
+        *,
+        source: Literal["csv", "json"],
+        source_filename: str | None = None,
+        source_content_type: str | None = None,
+    ) -> Campaign:
+        campaign = self.campaigns.get(campaign_id)
+        if not campaign:
+            raise LookupError("Campaign not found")
+        self._ensure_importable(campaign)
+
+        if len(guests) > self.settings.max_recipients_per_request:
+            raise ValueError(
+                f"Too many recipients in request (max {self.settings.max_recipients_per_request})"
+            )
+
+        try:
+            import_rows, recipients = build_import_entities(campaign.id, guests)
+        except EntryCodeConflictError as e:
+            raise ValueError(str(e)) from e
+
+        if len(recipients) > self.settings.max_recipients_per_campaign:
+            raise ValueError(
+                f"Campaign recipient limit exceeded (max {self.settings.max_recipients_per_campaign})"
+            )
+
+        label = source_filename
+        if source == "json" and not label:
+            label = "import-recipients.json"
+        content_type = source_content_type
+        if source == "json" and not content_type:
+            content_type = "application/json"
+
+        self.imports.replace_import_data(
+            campaign,
+            import_rows,
+            recipients,
+            source_filename=label,
+            source_content_type=content_type,
+            total_rows=len(guests),
+        )
+        self.db.refresh(campaign)
+        return campaign
+
     def import_file(
         self,
         campaign_id: uuid.UUID,
@@ -71,28 +122,18 @@ class CampaignService:
         delimiter: str | None,
         has_header: bool,
     ) -> Campaign:
-        campaign = self.campaigns.get(campaign_id)
-        if not campaign:
-            raise LookupError("Campaign not found")
-        if campaign.status == CampaignStatus.processing:
-            raise RuntimeError("Campaign already processing")
-
         try:
             guests = read_guests_from_bytes(content, delimiter=delimiter, has_header=has_header)
         except ImportColumnError as e:
             raise ValueError(str(e)) from e
 
-        import_rows, recipients = build_import_entities(campaign.id, guests)
-        self.imports.replace_import_data(
-            campaign,
-            import_rows,
-            recipients,
+        return self.import_guests(
+            campaign_id,
+            guests,
+            source="csv",
             source_filename=filename,
             source_content_type=content_type,
-            total_rows=len(guests),
         )
-        self.db.refresh(campaign)
-        return campaign
 
     def dispatch(self, campaign_id: uuid.UUID, *, delay_seconds: float, confirm: bool) -> tuple:
         campaign = self.campaigns.get(campaign_id)
