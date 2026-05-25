@@ -18,6 +18,18 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.execute(
+        """
+        DO $$ BEGIN
+            CREATE TYPE whatsapp_delivery_status_enum AS ENUM (
+                'pending_ack', 'sent', 'delivered', 'read', 'failed'
+            );
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+        END $$;
+        """
+    )
+
     enum_type = postgresql.ENUM(
         "pending_ack",
         "sent",
@@ -27,7 +39,13 @@ def upgrade() -> None:
         name="whatsapp_delivery_status_enum",
         create_type=False,
     )
-    enum_type.create(op.get_bind(), checkfirst=True)
+
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_columns = {c["name"] for c in inspector.get_columns("campaign_recipients")}
+
+    if "whatsapp_delivery_status" in existing_columns:
+        return
 
     op.add_column(
         "campaign_recipients",
