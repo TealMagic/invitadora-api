@@ -106,7 +106,7 @@ class WorkerService:
         fecha_hora_str = campaign.event_at.strftime("%d/%m/%Y %H:%M")
 
         try:
-            qr_bytes = generate_qr_image(recipient.button_phone)
+            qr_bytes = generate_qr_image(recipient.entry_code)
         except Exception as e:
             self._mark_failed(recipient, ErrorStage.qr, str(e))
             return

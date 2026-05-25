@@ -123,7 +123,13 @@ class CampaignService:
         self._check_request_limit(guests)
         total_rows = len(guests)
 
-        recipients_prepared, invalid = prepare_recipients(guests)
+        blocking_error: str | None = None
+        try:
+            recipients_prepared, invalid = prepare_recipients(guests)
+        except EntryCodeConflictError as e:
+            blocking_error = str(e)
+            recipients_prepared = []
+            invalid = []
         total_invalid = len(invalid)
 
         invalid_samples = [
@@ -134,7 +140,6 @@ class CampaignService:
             for g, err in invalid[:INVALID_SAMPLES_LIMIT]
         ]
 
-        blocking_error: str | None = None
         try:
             build_import_entities(campaign_id, guests)
         except EntryCodeConflictError as e:

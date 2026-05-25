@@ -122,6 +122,7 @@ class ValidateRecipientsResponse(BaseModel):
     would_exceed_campaign_limit: bool
     can_import: bool
     can_dispatch: bool
+    blocking_reasons: list[str] | None = None
 
 
 class ImportSummary(BaseModel):

@@ -106,7 +106,7 @@ class TestEntryCode:
 
 class TestQrImage:
     def test_jpg_dimensions(self):
-        data = generate_qr_image("1157017999")
+        data = generate_qr_image("ENT-A3B7K")
         img = Image.open(io.BytesIO(data))
         assert img.format == "JPEG"
         assert img.size == (1125, 600)

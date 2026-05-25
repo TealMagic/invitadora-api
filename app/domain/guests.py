@@ -155,8 +155,9 @@ def _merge_entry_code(rec: PreparedRecipient, guest: GuestRow, group_key: str) -
     if rec.entry_code is None:
         rec.entry_code = code
         return
+    # Mismo teléfono: un solo QR y un mensaje con todos los nombres; el primero define el código.
     if rec.entry_code != code:
-        raise EntryCodeConflictError(group_key, {rec.entry_code, code})
+        return
 
 
 def prepare_recipients(guests: List[GuestRow]) -> tuple[List[PreparedRecipient], List[tuple[GuestRow, str]]]:

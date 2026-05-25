@@ -89,6 +89,7 @@ def validate_recipients(
         status_code = 413 if detail.startswith("Too many recipients") else 422
         raise HTTPException(status_code=status_code, detail=detail)
 
+    blocking_reasons = [preview.blocking_error] if preview.blocking_error else None
     return ValidateRecipientsResponse(
         total_rows=preview.total_rows,
         total_unique_recipients=preview.total_unique_recipients,
@@ -97,6 +98,7 @@ def validate_recipients(
         would_exceed_campaign_limit=preview.would_exceed_campaign_limit,
         can_import=preview.can_import,
         can_dispatch=preview.can_dispatch,
+        blocking_reasons=blocking_reasons,
     )
 
 

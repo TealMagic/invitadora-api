@@ -63,3 +63,31 @@ class TestPreviewRecipients:
                 uuid.uuid4(),
                 [RecipientValidateInput(display_name="A", button_phone="+5491157017999")],
             )
+
+    def test_same_phone_different_entry_codes_merges_one_message(self, draft_campaign):
+        db = MagicMock()
+        service = CampaignService(db)
+        service.campaigns.get = MagicMock(return_value=draft_campaign)
+        service.settings.max_recipients_per_request = 500
+        service.settings.max_recipients_per_campaign = 2000
+
+        items = [
+            RecipientValidateInput(
+                display_name="Pedrito",
+                button_phone="1157017999",
+                entry_code="PEDG3AVU",
+            ),
+            RecipientValidateInput(
+                display_name="Tomasito",
+                button_phone="1157017999",
+                entry_code="TGM5JBQH",
+            ),
+        ]
+        guests = guests_from_validate_inputs(items)
+        preview = service.preview_recipients(draft_campaign.id, guests)
+
+        assert preview.blocking_error is None
+        assert preview.total_rows == 2
+        assert preview.total_unique_recipients == 1
+        assert preview.can_import is True
+        assert preview.can_dispatch is True
